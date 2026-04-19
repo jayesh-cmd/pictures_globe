@@ -1,0 +1,574 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>3D Photo Globe — Hand Gesture Control</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            background: #f8f6f0;
+            overflow: hidden;
+            font-family: 'Georgia', serif;
+        }
+
+        #scene {
+            position: fixed;
+            inset: 0;
+            background: radial-gradient(ellipse at 50% 40%, #ffffff 0%, #ece8e0 55%, #d8d2c8 100%);
+        }
+
+        #globe-canvas {
+            position: fixed;
+            inset: 0;
+            width: 100%;
+            height: 100%;
+        }
+
+        #cam-canvas {
+            position: fixed;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 260px;
+            height: 195px;
+            border-radius: 16px;
+            border: 2px solid rgba(255, 255, 255, 0.8);
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.18);
+            z-index: 100;
+        }
+
+        #hand-canvas {
+            position: fixed;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 260px;
+            height: 195px;
+            border-radius: 16px;
+            z-index: 101;
+            pointer-events: none;
+        }
+
+        #ui {
+            position: fixed;
+            top: 24px;
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 200;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 8px;
+        }
+
+        #title {
+            font-size: 13px;
+            letter-spacing: 0.18em;
+            text-transform: uppercase;
+            color: #6b6460;
+            background: rgba(255, 255, 255, 0.6);
+            backdrop-filter: blur(8px);
+            padding: 6px 20px;
+            border-radius: 20px;
+            border: 1px solid rgba(255, 255, 255, 0.8);
+        }
+
+        #gesture-indicator {
+            font-size: 12px;
+            color: #5a5550;
+            background: rgba(255, 255, 255, 0.75);
+            backdrop-filter: blur(8px);
+            padding: 5px 16px;
+            border-radius: 20px;
+            border: 1px solid rgba(255, 255, 255, 0.8);
+            min-width: 220px;
+            text-align: center;
+            transition: background 0.2s;
+        }
+
+        #gesture-indicator.active {
+            background: rgba(215, 240, 215, 0.92);
+            color: #2a5a2a;
+        }
+
+        #upload-btn {
+            position: fixed;
+            top: 24px;
+            right: 24px;
+            z-index: 200;
+            background: rgba(255, 255, 255, 0.85);
+            backdrop-filter: blur(8px);
+            border: 1px solid rgba(200, 195, 188, 0.6);
+            border-radius: 12px;
+            padding: 8px 16px;
+            font-size: 12px;
+            letter-spacing: 0.1em;
+            text-transform: uppercase;
+            color: #5a5550;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        #upload-btn:hover {
+            background: #fff;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+        }
+
+        #file-input {
+            display: none;
+        }
+
+        #lightbox {
+            display: none;
+            position: fixed;
+            inset: 0;
+            background: rgba(20, 18, 15, 0.88);
+            z-index: 999;
+            align-items: center;
+            justify-content: center;
+            backdrop-filter: blur(8px);
+        }
+
+        #lightbox.open {
+            display: flex;
+        }
+
+        #lightbox img {
+            max-width: 85vw;
+            max-height: 85vh;
+            border-radius: 12px;
+            box-shadow: 0 30px 80px rgba(0, 0, 0, 0.6);
+            animation: lbIn 0.25s ease;
+        }
+
+        @keyframes lbIn {
+            from {
+                transform: scale(0.88);
+                opacity: 0;
+            }
+
+            to {
+                transform: scale(1);
+                opacity: 1;
+            }
+        }
+
+        #lightbox-close {
+            position: absolute;
+            top: 20px;
+            right: 24px;
+            color: rgba(255, 255, 255, 0.7);
+            font-size: 28px;
+            cursor: pointer;
+            background: none;
+            border: none;
+        }
+
+        #status {
+            position: fixed;
+            bottom: 20px;
+            left: 20px;
+            font-size: 11px;
+            color: #8a8580;
+            background: rgba(255, 255, 255, 0.6);
+            padding: 4px 12px;
+            border-radius: 10px;
+            z-index: 200;
+        }
+
+        .gesture-hint {
+            position: fixed;
+            bottom: 240px;
+            right: 20px;
+            z-index: 200;
+            background: rgba(255, 255, 255, 0.75);
+            backdrop-filter: blur(8px);
+            border: 1px solid rgba(200, 195, 188, 0.5);
+            border-radius: 12px;
+            padding: 10px 14px;
+            font-size: 11px;
+            color: #6b6460;
+            line-height: 1.9;
+            width: 220px;
+        }
+
+        .gesture-hint strong {
+            color: #3a3530;
+            font-size: 11px;
+            display: block;
+            margin-bottom: 3px;
+        }
+
+        #zoom-ring {
+            position: fixed;
+            pointer-events: none;
+            z-index: 300;
+            border: 2.5px solid rgba(80, 180, 80, 0.75);
+            border-radius: 50%;
+            display: none;
+            transform: translate(-50%, -50%);
+        }
+
+        #zoom-ring.visible {
+            display: block;
+        }
+    </style>
+</head>
+
+<body>
+
+    <div id="scene"></div>
+    <canvas id="globe-canvas"></canvas>
+    <video id="video" style="display:none" autoplay playsinline></video>
+    <canvas id="cam-canvas"></canvas>
+    <canvas id="hand-canvas"></canvas>
+    <div id="zoom-ring"></div>
+
+    <div id="ui">
+        <div id="title">✦ Memory Globe</div>
+        <div id="gesture-indicator">Initializing camera...</div>
+    </div>
+
+    <button id="upload-btn" onclick="document.getElementById('file-input').click()">+ Upload Photos</button>
+    <input type="file" id="file-input" multiple accept="image/*">
+
+    <div class="gesture-hint">
+        <strong>✋ Hand Gestures</strong>
+        ☝ 1–3 fingers + move → Rotate<br>
+        🙌 Two-hand pinch → Zoom<br>
+        ✊ Fist → Pause globe<br>
+        👆 Click photo → Open
+    </div>
+
+    <div id="status">Loading MediaPipe...</div>
+
+    <div id="lightbox">
+        <button id="lightbox-close" onclick="closeLightbox()">✕</button>
+        <img id="lb-img" src="">
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js"
+        crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+    <script>
+        // ─── GLOBALS ──────────────────────────────────────────────────────────────────
+        const gc = document.getElementById('globe-canvas');
+        const gx = gc.getContext('2d');
+        const cc = document.getElementById('cam-canvas');
+        const cx2 = cc.getContext('2d');
+        const hc = document.getElementById('hand-canvas');
+        const hx = hc.getContext('2d');
+        const video = document.getElementById('video');
+        const statusEl = document.getElementById('status');
+        const gestureEl = document.getElementById('gesture-indicator');
+        const zoomRing = document.getElementById('zoom-ring');
+
+        let W = window.innerWidth, H = window.innerHeight;
+        let rotX = 0.28, rotY = 0;
+        let autoSpin = true;
+        let zoom = 1.0;
+        let velX = 0.004, velY = 0;
+        let photos = [];   // ONLY user photos — no placeholders, no repeats
+        let tiles = [];
+
+        // ─── GESTURE STATE ────────────────────────────────────────────────────────────
+        let handPresent = false;
+        let gesture = 'none';
+
+        // Rotation tracking
+        let prevIndexPos = null;
+        const SMOOTH_N = 5;
+        const vxBuf = Array(SMOOTH_N).fill(0), vyBuf = Array(SMOOTH_N).fill(0);
+        let vBufIdx = 0;
+        const avg = b => b.reduce((a, c) => a + c, 0) / SMOOTH_N;
+
+        // Single-hand pinch
+        let pinchActive = false;
+        let prevPinchDist1 = null;
+        let tapFrames = 0;
+        let tapPos = null;
+        const PINCH_ON = 0.052;
+        const PINCH_OFF = 0.072;
+
+        // Two-hand pinch
+        let twoPinchDist = null;
+
+        // ─── GEOMETRY ─────────────────────────────────────────────────────────────────
+        function fibSphere(n) {
+            const pts = [], phi = Math.PI * (3 - Math.sqrt(5));
+            for (let i = 0; i < n; i++) {
+                const y = 1 - (i / (n - 1)) * 2, r = Math.sqrt(Math.max(0, 1 - y * y)), t = phi * i;
+                pts.push([r * Math.cos(t) + (Math.random() - .5) * .07, y + (Math.random() - .5) * .07, r * Math.sin(t)]);
+            }
+            return pts;
+        }
+
+        function initTiles() {
+            tiles = [];
+            if (!photos.length) return;
+            const pts = fibSphere(photos.length);
+            photos.forEach((img, i) => {
+                const aspect = (img.naturalHeight || img.height) / (img.naturalWidth || img.width) || 1.33;
+                const bw = 52 + Math.random() * 36;
+                tiles.push({ pt: pts[i], img, tilt: (Math.random() - .5) * 16, baseW: bw, baseH: bw * aspect });
+            });
+        }
+
+        // ─── CANVAS / RESIZE ──────────────────────────────────────────────────────────
+        function resize() {
+            W = window.innerWidth; H = window.innerHeight;
+            gc.width = W * devicePixelRatio; gc.height = H * devicePixelRatio;
+            gc.style.width = W + 'px'; gc.style.height = H + 'px';
+        }
+
+        // ─── 3D PROJECTION ────────────────────────────────────────────────────────────
+        function project(px, py, pz) {
+            const cx = Math.cos(rotX), sx = Math.sin(rotX);
+            const y1 = py * cx - pz * sx, z1 = py * sx + pz * cx;
+            const cy = Math.cos(rotY), sy = Math.sin(rotY);
+            const x2 = px * cy + z1 * sy, z2 = -px * sy + z1 * cy, y2 = y1;
+            const r = Math.min(W, H) * 0.38 * zoom;
+            const fov = 900 * devicePixelRatio;
+            const scl = fov / (fov + z2 * r);
+            return { x: W / 2 * devicePixelRatio + x2 * r * scl, y: H / 2 * devicePixelRatio + y2 * r * scl, z: z2, scl };
+        }
+
+        // ─── DRAW ─────────────────────────────────────────────────────────────────────
+        function rr(c, x, y, w, h, r) {
+            c.beginPath();
+            c.moveTo(x + r, y); c.lineTo(x + w - r, y); c.arcTo(x + w, y, x + w, y + r, r);
+            c.lineTo(x + w, y + h - r); c.arcTo(x + w, y + h, x + w - r, y + h, r);
+            c.lineTo(x + r, y + h); c.arcTo(x, y + h, x, y + h - r, r);
+            c.lineTo(x, y + r); c.arcTo(x, y, x + r, y, r); c.closePath();
+        }
+
+        function draw() {
+            gx.clearRect(0, 0, gc.width, gc.height);
+            if (!tiles.length) {
+                gx.save();
+                gx.font = `${15 * devicePixelRatio}px Georgia`;
+                gx.fillStyle = 'rgba(100,90,80,0.4)';
+                gx.textAlign = 'center';
+                gx.fillText('Upload your photos to fill the globe  ↗', W / 2 * devicePixelRatio, H / 2 * devicePixelRatio);
+                gx.restore(); return;
+            }
+            const proj = tiles.map(t => ({ ...t, ...project(t.pt[0], t.pt[1], t.pt[2]) }));
+            proj.sort((a, b) => a.z - b.z);
+            for (const t of proj) {
+                if (t.z < -0.3) continue;
+                const alpha = Math.min(1, (t.z + 0.45) * 1.7);
+                const w = t.baseW * t.scl * devicePixelRatio * 1.5;
+                const h = t.baseH * t.scl * devicePixelRatio * 1.5;
+                gx.save();
+                gx.globalAlpha = alpha;
+                gx.translate(t.x, t.y);
+                gx.rotate(t.tilt * Math.PI / 180);
+                gx.shadowColor = 'rgba(50,40,30,0.2)';
+                gx.shadowBlur = 12 * devicePixelRatio;
+                gx.shadowOffsetX = 2 * devicePixelRatio; gx.shadowOffsetY = 5 * devicePixelRatio;
+                const bord = 5 * t.scl * devicePixelRatio, bot = 16 * t.scl * devicePixelRatio, rad = 3 * devicePixelRatio;
+                gx.fillStyle = '#fff';
+                rr(gx, -w / 2 - bord, -h / 2 - bord, w + bord * 2, h + bord + bot, rad); gx.fill();
+                gx.shadowColor = 'transparent';
+                gx.save(); rr(gx, -w / 2, -h / 2, w, h, rad); gx.clip();
+                gx.drawImage(t.img, -w / 2, -h / 2, w, h);
+                gx.restore(); gx.restore();
+            }
+        }
+
+        // ─── LOOP ─────────────────────────────────────────────────────────────────────
+        function loop() {
+            if (!handPresent || gesture === 'none') {
+                rotY += velX; rotX += velY;
+                velX *= 0.978; velY *= 0.978;
+                if (autoSpin && Math.abs(velX) < 0.005) velX = 0.004;
+            }
+            rotX = Math.max(-1.3, Math.min(1.3, rotX));
+            draw();
+            requestAnimationFrame(loop);
+        }
+
+        // ─── MOUSE FALLBACK ───────────────────────────────────────────────────────────
+        let md = false, lmx, lmy;
+        gc.addEventListener('mousedown', e => { md = true; lmx = e.clientX; lmy = e.clientY; velX = velY = 0; autoSpin = false; });
+        window.addEventListener('mousemove', e => {
+            if (!md) return;
+            const dx = e.clientX - lmx, dy = e.clientY - lmy;
+            velX = dx * .007; velY = dy * .007; rotY += velX; rotX += velY; lmx = e.clientX; lmy = e.clientY;
+        });
+        window.addEventListener('mouseup', () => { md = false; });
+        gc.addEventListener('wheel', e => { e.preventDefault(); zoom = Math.max(0.4, Math.min(3.0, zoom - e.deltaY * .001)); }, { passive: false });
+        gc.addEventListener('click', e => hitTest(e.clientX * devicePixelRatio, e.clientY * devicePixelRatio));
+
+        // ─── HIT TEST ─────────────────────────────────────────────────────────────────
+        function hitTest(mx, my) {
+            if (!tiles.length) return;
+            const proj = tiles.map(t => ({ ...t, ...project(t.pt[0], t.pt[1], t.pt[2]) }));
+            proj.sort((a, b) => b.z - a.z);
+            for (const t of proj) {
+                if (t.z < -0.1) continue;
+                const w = t.baseW * t.scl * devicePixelRatio * 1.5, h = t.baseH * t.scl * devicePixelRatio * 1.5;
+                if (mx > t.x - w / 2 && mx < t.x + w / 2 && my > t.y - h / 2 && my < t.y + h / 2) { openLightbox(t.img.src); return; }
+            }
+        }
+
+        // ─── LIGHTBOX ─────────────────────────────────────────────────────────────────
+        function openLightbox(src) { document.getElementById('lb-img').src = src; document.getElementById('lightbox').classList.add('open'); }
+        function closeLightbox() { document.getElementById('lightbox').classList.remove('open'); }
+        document.getElementById('lightbox').addEventListener('click', e => { if (e.target === document.getElementById('lightbox')) closeLightbox(); });
+
+        // ─── FILE UPLOAD ──────────────────────────────────────────────────────────────
+        document.getElementById('file-input').addEventListener('change', function () {
+            const files = [...this.files]; if (!files.length) return;
+            photos = []; let loaded = 0;
+            files.forEach(f => {
+                const img = new Image();
+                img.onload = () => {
+                    photos.push(img); loaded++;
+                    if (loaded === files.length) { initTiles(); statusEl.textContent = `${loaded} photo${loaded > 1 ? 's' : ''} on globe`; }
+                };
+                img.src = URL.createObjectURL(f);
+            });
+        });
+
+        // ─── MEDIAPIPE HELPERS ────────────────────────────────────────────────────────
+        const d2 = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
+        const lerp = (a, b, t) => a + (b - a) * t;
+
+        function extFingers(lm) {
+            let n = 0;
+            [[8, 5], [12, 9], [16, 13], [20, 17]].forEach(([tip, mcp]) => { if (lm[tip].y < lm[mcp].y - 0.025) n++; });
+            if (d2(lm[4], lm[5]) > d2(lm[2], lm[5]) * 0.72) n++;
+            return n;
+        }
+
+        function showRing(x1, y1, x2, y2) {
+            const cx = (x1 + x2) / 2, cy = (y1 + y2) / 2, d = Math.hypot(x2 - x1, y2 - y1);
+            zoomRing.style.left = cx + 'px'; zoomRing.style.top = cy + 'px';
+            zoomRing.style.width = d + 'px'; zoomRing.style.height = d + 'px';
+            zoomRing.classList.add('visible');
+        }
+        const hideRing = () => zoomRing.classList.remove('visible');
+
+        // ─── MEDIAPIPE RESULTS ────────────────────────────────────────────────────────
+        function onHandResults(res) {
+            cx2.clearRect(0, 0, cc.width, cc.height);
+            cx2.save(); cx2.scale(-1, 1); cx2.drawImage(res.image, -cc.width, 0, cc.width, cc.height); cx2.restore();
+            hx.clearRect(0, 0, hc.width, hc.height);
+
+            const hands = res.multiHandLandmarks || [];
+
+            if (!hands.length) {
+                handPresent = false; gesture = 'none'; autoSpin = true;
+                prevIndexPos = null; pinchActive = false; prevPinchDist1 = null; twoPinchDist = null; tapFrames = 0;
+                hideRing();
+                gestureEl.textContent = 'No hand — auto-spinning';
+                gestureEl.classList.remove('active');
+                return;
+            }
+
+            handPresent = true; autoSpin = false; gestureEl.classList.add('active');
+
+            // draw skeletons (mirrored for preview)
+            hands.forEach(lm => {
+                if (!window.drawConnectors || !window.HAND_CONNECTIONS) return;
+                const m = lm.map(p => ({ ...p, x: 1 - p.x }));
+                drawConnectors(hx, m, HAND_CONNECTIONS, { color: 'rgba(255,255,255,0.5)', lineWidth: 1.5 });
+                drawLandmarks(hx, m, { color: '#fff', fillColor: 'rgba(255,185,60,0.9)', lineWidth: 1, radius: 2.5 });
+            });
+
+            // ── TWO-HAND PINCH ─────────────────────────────────────────────────────────
+            if (hands.length === 2) {
+                const pd0 = d2(hands[0][4], hands[0][8]), pd1 = d2(hands[1][4], hands[1][8]);
+                if (pd0 < PINCH_ON && pd1 < PINCH_ON) {
+                    gesture = 'two_pinch';
+                    gestureEl.textContent = '🙌 Two-hand pinch — Zooming';
+                    const t0 = hands[0][8], t1 = hands[1][8];
+                    const dist = Math.hypot((t0.x - t1.x) * W, (t0.y - t1.y) * H);
+                    showRing(t0.x * W, t0.y * H, t1.x * W, t1.y * H);
+                    if (twoPinchDist !== null) {
+                        const ratio = dist / twoPinchDist;
+                        zoom = Math.max(0.4, Math.min(3.0, zoom * lerp(1, ratio, 0.5)));
+                    }
+                    twoPinchDist = dist;
+                    prevIndexPos = null; pinchActive = false; prevPinchDist1 = null; tapFrames = 0;
+                    return;
+                }
+            }
+            twoPinchDist = null; hideRing();
+
+            // ── SINGLE HAND ────────────────────────────────────────────────────────────
+            const lm = hands[0];
+            const fingers = extFingers(lm);
+            const tip = lm[8];
+
+            // ── Rotation / pause ──────────────────────────────────────────────────────
+            if (fingers === 0) {
+                gesture = 'fist'; gestureEl.textContent = '✊ Fist — Paused';
+                velX *= 0.82; velY *= 0.82; prevIndexPos = null;
+            } else {
+                gesture = 'rotate';
+                gestureEl.textContent = fingers === 1 ? '☝ Pointing — Rotating' : `✌ ${fingers} fingers — Rotating`;
+                if (prevIndexPos) {
+                    const dx = tip.x - prevIndexPos.x, dy = tip.y - prevIndexPos.y;
+                    const mag = Math.hypot(dx, dy);
+                    if (mag > 0.003 && mag < 0.08) {
+                        vxBuf[vBufIdx] = -dx * 8;
+                        vyBuf[vBufIdx] = dy * 8;
+                    } else {
+                        vxBuf[vBufIdx] = 0; vyBuf[vBufIdx] = 0;
+                    }
+                    vBufIdx = (vBufIdx + 1) % SMOOTH_N;
+                    velX = avg(vxBuf); velY = avg(vyBuf);
+                    rotY += velX; rotX += velY;
+                }
+                prevIndexPos = { x: tip.x, y: tip.y };
+            }
+        }
+
+        // ─── INIT MEDIAPIPE ───────────────────────────────────────────────────────────
+        function initMediaPipe() {
+            if (typeof Hands === 'undefined') {
+                statusEl.textContent = 'MediaPipe unavailable — use mouse';
+                gestureEl.textContent = 'Drag to rotate • Scroll to zoom';
+                return;
+            }
+            const hands = new Hands({ locateFile: f => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${f}` });
+            hands.setOptions({ maxNumHands: 2, modelComplexity: 1, minDetectionConfidence: 0.76, minTrackingConfidence: 0.66 });
+            hands.onResults(onHandResults);
+
+            navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user', width: 640, height: 480 } })
+                .then(stream => {
+                    video.srcObject = stream;
+                    video.onloadedmetadata = () => {
+                        video.play();
+                        cc.width = 260; cc.height = 195; hc.width = 260; hc.height = 195;
+                        const cam = new Camera(video, { onFrame: async () => { await hands.send({ image: video }); }, width: 640, height: 480 });
+                        cam.start();
+                        statusEl.textContent = '✓ Hand tracking active';
+                        gestureEl.textContent = 'Show your hand to control the globe';
+                    };
+                })
+                .catch(() => {
+                    statusEl.textContent = 'Camera denied — use mouse/touch';
+                    gestureEl.textContent = 'Drag to rotate • Scroll to zoom';
+                });
+        }
+
+        // ─── BOOT ─────────────────────────────────────────────────────────────────────
+        resize();
+        window.addEventListener('resize', resize);
+        loop();
+        window.addEventListener('load', () => setTimeout(initMediaPipe, 600));
+    </script>
+</body>
+
+</html>
